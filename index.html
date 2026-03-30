@@ -486,17 +486,20 @@ function getAvColor(name) {
 
 function mapStatus(raw) {
   const s = (raw || '').toLowerCase();
-  if (s.includes('active') || s.includes('work')) return { label:'Actif', cls:'badge-active' };
-  if (s.includes('new') || s.includes('creat')) return { label:'Nouveau', cls:'badge-new' };
-  if (s.includes('block') || s.includes('ban')) return { label:'Bloqué', cls:'badge-blocked' };
+  if (s === 'working' || s === 'active' || s === 'work') return { label:'Actif', cls:'badge-active' };
+  if (s === 'new' || s === 'created' || s === 'pending') return { label:'Nouveau', cls:'badge-new' };
+  if (s === 'fired' || s === 'blocked' || s === 'banned' || s === 'deactivated') return { label:'Bloqué', cls:'badge-blocked' };
+  if (s === 'on_work' || s === 'busy') return { label:'En course', cls:'badge-busy' };
+  if (s === '') return { label:'Inconnu', cls:'badge-busy' };
   return { label: raw || 'Inconnu', cls:'badge-busy' };
 }
 
 function mapAvailability(raw) {
   if (!raw) return { label:'—', cls:'' };
   const s = raw.toLowerCase();
-  if (s.includes('free') || s.includes('available')) return { label:'Libre', cls:'badge-free' };
-  if (s.includes('busy') || s.includes('order')) return { label:'En course', cls:'badge-busy' };
+  if (s === 'working' || s === 'free' || s === 'available' || s === 'on_shift') return { label:'Libre', cls:'badge-free' };
+  if (s === 'busy' || s === 'in_order' || s === 'on_order') return { label:'En course', cls:'badge-busy' };
+  if (s === 'fired' || s === 'offline') return { label:'Hors ligne', cls:'badge-blocked' };
   return { label: raw, cls:'' };
 }
 
@@ -510,11 +513,17 @@ async function fetchBalance() {
   const res = await fetch(WEBHOOK_SOLDE);
   if (!res.ok) throw new Error('Webhook Solde ' + res.status);
   const data = await res.json();
-  if (data.balance !== undefined && data.balance !== null) return parseFloat(data.balance);
+  if (data.balance !== undefined && data.balance !== null) {
+    const raw = parseFloat(data.balance);
+    return Math.abs(raw) > 1000 ? raw / 100 : raw;
+  }
   const profiles = data.driver_profiles || data.profiles || data.items || [];
   if (profiles.length > 0) {
     const acc = profiles[0].accounts?.[0];
-    if (acc?.balance !== undefined) return parseFloat(acc.balance);
+    if (acc?.balance !== undefined) {
+      const raw = parseFloat(acc.balance);
+      return Math.abs(raw) > 1000 ? raw / 100 : raw;
+    }
   }
   return null;
 }
@@ -581,8 +590,10 @@ function renderDriversTable(drivers) {
     const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
     const phone = profile.phones?.[0]?.phone || profile.phone || '—';
     const rawStatus = profile.status || d.status || '';
-    const st = mapStatus(rawStatus);
-    const avail = mapAvailability(profile.work_status || d.work_status || '');
+    const workStatus = profile.work_status || d.work_status || '';
+    const displayStatus = workStatus || rawStatus;
+    const st = mapStatus(displayStatus);
+    const avail = mapAvailability(workStatus);
     const rating = profile.rating?.toFixed(1) || '—';
     const trips = profile.completed_orders_count ?? profile.trips ?? '—';
     const av = getAvColor(name);
@@ -796,12 +807,14 @@ async function loadData() {
       allDrivers = data.driver_profiles || data.profiles || data.items || [];
       
       const activeCount = allDrivers.filter(d => {
-        const s = (d.driver_profile?.status || d.status || '').toLowerCase();
-        return s.includes('active') || s.includes('work');
+        const profile = d.driver_profile || d;
+        const s = (profile.work_status || profile.status || d.status || '').toLowerCase();
+        return s === 'working' || s === 'active' || s === 'work' || s === 'on_shift' || s === 'free' || s === 'busy' || s === 'in_order';
       }).length;
       const newCount = allDrivers.filter(d => {
-        const s = (d.driver_profile?.status || d.status || '').toLowerCase();
-        return s.includes('new') || s.includes('creat');
+        const profile = d.driver_profile || d;
+        const s = (profile.status || d.status || '').toLowerCase();
+        return s === 'new' || s === 'created' || s === 'pending';
       }).length;
 
       document.getElementById('stat-total').textContent = allDrivers.length;
