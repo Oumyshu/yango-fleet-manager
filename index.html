@@ -151,6 +151,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
 .badge-blocked { background: var(--red-bg); color: var(--red); }
 .badge-busy { background: var(--amber-bg); color: var(--amber); }
 .badge-free { background: var(--green-bg); color: var(--green); }
+.badge-offline { background: rgba(100,100,100,0.15); color: var(--text3); }
 
 /* ACTIVATION PANEL */
 .activation-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
@@ -484,47 +485,42 @@ function getAvColor(name) {
   return AV_COLORS[idx];
 }
 
-function mapStatus(raw) {
-  const s = (raw || '').toLowerCase();
-  if (s === 'working' || s === 'active' || s === 'work') return { label:'Actif', cls:'badge-active' };
-  if (s === 'new' || s === 'created' || s === 'pending') return { label:'Nouveau', cls:'badge-new' };
-  if (s === 'fired' || s === 'blocked' || s === 'banned' || s === 'deactivated') return { label:'Bloqué', cls:'badge-blocked' };
-  if (s === 'on_work' || s === 'busy') return { label:'En course', cls:'badge-busy' };
-  if (s === '') return { label:'Inconnu', cls:'badge-busy' };
-  return { label: raw || 'Inconnu', cls:'badge-busy' };
+function mapStatus(workStatus, currentStatus) {
+  const ws = (workStatus || '').toLowerCase();
+  const cs = (currentStatus || '').toLowerCase();
+  if (ws === 'fired') return { label:'Renvoyé', cls:'badge-blocked' };
+  if (cs === 'busy') return { label:'En course', cls:'badge-busy' };
+  if (cs === 'free') return { label:'Libre', cls:'badge-active' };
+  if (cs === 'offline' && ws === 'working') return { label:'Hors ligne', cls:'badge-offline' };
+  if (ws === 'working') return { label:'Actif', cls:'badge-active' };
+  return { label: ws || '—', cls:'' };
 }
 
 function mapAvailability(raw) {
-  if (!raw) return { label:'—', cls:'' };
-  const s = raw.toLowerCase();
-  if (s === 'working' || s === 'free' || s === 'available' || s === 'on_shift') return { label:'Libre', cls:'badge-free' };
-  if (s === 'busy' || s === 'in_order' || s === 'on_order') return { label:'En course', cls:'badge-busy' };
-  if (s === 'fired' || s === 'offline') return { label:'Hors ligne', cls:'badge-blocked' };
-  return { label: raw, cls:'' };
+  const s = (raw || '').toLowerCase();
+  if (s === 'free') return { label:'Libre', cls:'badge-active' };
+  if (s === 'busy') return { label:'En course', cls:'badge-busy' };
+  if (s === 'offline') return { label:'Hors ligne', cls:'badge-offline' };
+  return { label: '—', cls:'' };
 }
 
 async function fetchDrivers() {
   const res = await fetch(WEBHOOK_DRIVERS);
   if (!res.ok) throw new Error('Webhook Chauffeurs ' + res.status);
-  return await res.json();
+  const data = await res.json();
+  return data;
 }
 
 async function fetchBalance() {
   const res = await fetch(WEBHOOK_SOLDE);
   if (!res.ok) throw new Error('Webhook Solde ' + res.status);
   const data = await res.json();
-  const EUR_TO_FCFA = 655.957;
   if (data.balance !== undefined && data.balance !== null) {
-    const euros = parseFloat(data.balance) / 100;
-    return Math.round(euros * EUR_TO_FCFA);
+    return Math.round(parseFloat(data.balance));
   }
-  const profiles = data.driver_profiles || data.profiles || data.items || [];
-  if (profiles.length > 0) {
-    const acc = profiles[0].accounts?.[0];
-    if (acc?.balance !== undefined) {
-      const euros = parseFloat(acc.balance) / 100;
-      return Math.round(euros * EUR_TO_FCFA);
-    }
+  if (data.raw?.driver_profiles?.length > 0) {
+    const acc = data.raw.driver_profiles[0].accounts?.[0];
+    if (acc?.balance !== undefined) return Math.round(parseFloat(acc.balance));
   }
   return null;
 }
@@ -561,8 +557,7 @@ function renderSolde(amount) {
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-  const eur = (amount / 655.957).toFixed(2);
-  document.getElementById('solde-date').textContent = `Dernière vérif: ${now.toLocaleDateString('fr-FR')} à ${timeStr} · ${eur} €`;
+  document.getElementById('solde-date').textContent = `Dernière vérif: ${now.toLocaleDateString('fr-FR')} à ${timeStr}`;
   document.getElementById('h1-time').textContent = timeStr;
   document.getElementById('h1-amount').textContent = fmt;
   document.getElementById('h1-amount').className = 'history-amount ' + (amount < SEUIL_SOLDE ? 'h-minus' : 'h-plus');
@@ -579,10 +574,12 @@ function renderDriversTable(drivers) {
   let filtered = drivers;
   if (currentFilter !== 'all') {
     filtered = drivers.filter(d => {
-      const s = (d.driver_profile?.status || d.status || '').toLowerCase();
-      if (currentFilter === 'active') return s.includes('active') || s.includes('work');
-      if (currentFilter === 'new') return s.includes('new') || s.includes('creat');
-      if (currentFilter === 'blocked') return s.includes('block') || s.includes('ban');
+      const ws = (d.driver_profile?.work_status || '').toLowerCase();
+      const cs = (d.current_status?.status || '').toLowerCase();
+      const license = d.driver_profile?.driver_license?.normalized_number || '';
+      if (currentFilter === 'active') return (cs === 'free' || cs === 'busy') && ws !== 'fired';
+      if (currentFilter === 'new') return license.startsWith('DRIVERDRAFT');
+      if (currentFilter === 'blocked') return ws === 'fired';
       return true;
     });
   }
@@ -590,12 +587,12 @@ function renderDriversTable(drivers) {
   const tableRows = filtered.map(d => {
     const profile = d.driver_profile || d;
     const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
-    const phone = profile.phones?.[0]?.phone || profile.phone || '—';
-    const rawStatus = profile.status || d.status || '';
-    const workStatus = profile.work_status || d.work_status || '';
-    const displayStatus = workStatus || rawStatus;
-    const st = mapStatus(displayStatus);
-    const avail = mapAvailability(workStatus);
+    const phone = (Array.isArray(profile.phones) ? profile.phones[0] : profile.phone) || '—';
+    const workStatus = profile.work_status || '';
+    const currentStatus = d.current_status?.status || '';
+    const st = mapStatus(workStatus, currentStatus);
+    const avail = mapAvailability(currentStatus);
+    const car = d.car ? `${d.car.brand} ${d.car.model} · ${d.car.normalized_number}` : '—';
     const rating = profile.rating?.toFixed(1) || '—';
     const trips = profile.completed_orders_count ?? profile.trips ?? '—';
     const av = getAvColor(name);
@@ -621,8 +618,9 @@ function renderDriversTable(drivers) {
   const dashRows = drivers.slice(0,5).map(d => {
     const profile = d.driver_profile || d;
     const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
-    const rawStatus = profile.status || d.status || '';
-    const st = mapStatus(rawStatus);
+    const workStatus = profile.work_status || '';
+    const currentStatus = d.current_status?.status || '';
+    const st = mapStatus(workStatus, currentStatus);
     const av = getAvColor(name);
     const initials = getInitials(name);
     const trips = profile.completed_orders_count ?? profile.trips ?? '—';
@@ -806,19 +804,18 @@ async function loadData() {
 
     if (driversData.status === 'fulfilled') {
       const data = driversData.value;
-      allDrivers = data.driver_profiles || data.profiles || data.items || [];
+      const rawData = data.raw || data;
+      allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
       
       const activeCount = allDrivers.filter(d => {
-        const profile = d.driver_profile || d;
-        const ws = (profile.work_status || d.work_status || '').toLowerCase();
-        const st = (profile.status || d.status || '').toLowerCase();
-        return ws === 'working' || ws === 'free' || ws === 'busy' || ws === 'in_order' || ws === 'on_shift'
-          || st === 'active' || st === 'working';
+        const cs = (d.current_status?.status || '').toLowerCase();
+        const ws = (d.driver_profile?.work_status || '').toLowerCase();
+        return (cs === 'free' || cs === 'busy') && ws !== 'fired';
       }).length;
       const newCount = allDrivers.filter(d => {
-        const profile = d.driver_profile || d;
-        const s = (profile.status || d.status || '').toLowerCase();
-        return s === 'new' || s === 'created' || s === 'pending' || s === 'newbie';
+        const license = d.driver_profile?.driver_license?.normalized_number || '';
+        const ws = (d.driver_profile?.work_status || '').toLowerCase();
+        return license.startsWith('DRIVERDRAFT') || ws === 'new' || ws === 'pending';
       }).length;
 
       document.getElementById('stat-total').textContent = allDrivers.length;
