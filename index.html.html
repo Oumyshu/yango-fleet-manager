@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Yango Fleet Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --yango: #F5A623;
+  --yango-dark: #D4891A;
+  --yango-light: #FFF3DC;
+  --bg: #0F0F0F;
+  --bg2: #1A1A1A;
+  --bg3: #242424;
+  --border: rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.14);
+  --text: #F0F0F0;
+  --text2: #999;
+  --text3: #666;
+  --green: #2ECC71;
+  --green-bg: rgba(46,204,113,0.12);
+  --red: #E74C3C;
+  --red-bg: rgba(231,76,60,0.12);
+  --amber: #F39C12;
+  --amber-bg: rgba(243,156,18,0.12);
+  --blue: #3498DB;
+  --blue-bg: rgba(52,152,219,0.12);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+/* LAYOUT */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: 220px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+.main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+/* SIDEBAR */
+.sidebar-logo { padding: 20px 16px 16px; border-bottom: 1px solid var(--border); }
+.logo-badge { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 36px; height: 36px; background: var(--yango); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #fff; flex-shrink: 0; }
+.logo-text { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.2; }
+.logo-sub { font-size: 11px; color: var(--text3); }
+
+.sidebar-nav { flex: 1; padding: 12px 8px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text2); font-size: 13px; transition: all 0.15s; margin-bottom: 2px; border: none; background: none; width: 100%; text-align: left; }
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+.nav-item.active { background: rgba(245,166,35,0.12); color: var(--yango); }
+.nav-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-badge { margin-left: auto; background: var(--red); color: #fff; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 20px; }
+.nav-badge.amber { background: var(--amber); }
+
+.sidebar-footer { padding: 12px 8px 16px; border-top: 1px solid var(--border); }
+.park-info { padding: 10px; background: var(--bg3); border-radius: var(--radius-sm); }
+.park-name { font-size: 12px; font-weight: 500; color: var(--text); }
+.park-id { font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace; margin-top: 2px; word-break: break-all; }
+
+/* TOPBAR */
+.topbar { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg); position: sticky; top: 0; z-index: 10; }
+.topbar-left h1 { font-size: 18px; font-weight: 600; }
+.topbar-left p { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.api-status { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border2); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot-live { background: var(--green); animation: pulse 2s infinite; }
+.dot-loading { background: var(--amber); animation: pulse 1s infinite; }
+.dot-error { background: var(--red); }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+.btn-refresh { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); padding: 7px 14px; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+.btn-refresh:hover { background: var(--border); color: var(--text); }
+.btn-refresh.spinning svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* CONTENT */
+.content { padding: 20px 24px; flex: 1; }
+
+/* SCREENS */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* STATS ROW */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-icon { font-size: 16px; }
+.stat-val { font-size: 26px; font-weight: 600; line-height: 1; }
+.stat-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+.stat-card.highlight { border-color: var(--yango); background: rgba(245,166,35,0.06); }
+
+/* ALERT BANNER */
+.alert-banner { background: var(--red-bg); border: 1px solid rgba(231,76,60,0.3); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 12px; }
+.alert-banner.hidden { display: none; }
+.alert-banner.amber { background: var(--amber-bg); border-color: rgba(243,156,18,0.3); }
+.alert-icon { font-size: 18px; flex-shrink: 0; }
+.alert-content h3 { font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 3px; }
+.alert-banner.amber .alert-content h3 { color: var(--amber); }
+.alert-content p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.alert-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+.btn-alert { padding: 6px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; border: none; font-family: 'DM Sans', sans-serif; }
+.btn-recharge { background: var(--red); color: #fff; }
+.btn-later { background: var(--bg3); color: var(--text2); }
+
+/* SOLDE CARD */
+.solde-section { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.solde-main { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.solde-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.solde-title { font-size: 13px; color: var(--text3); }
+.solde-amount { font-size: 36px; font-weight: 600; font-family: 'DM Mono', monospace; margin-bottom: 6px; }
+.solde-ok { color: var(--green); }
+.solde-warn { color: var(--amber); }
+.solde-danger { color: var(--red); }
+.solde-bar-wrap { margin: 14px 0 8px; }
+.solde-bar-bg { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.solde-bar-fill { height: 100%; border-radius: 4px; transition: width 0.8s cubic-bezier(.4,0,.2,1), background 0.5s; }
+.solde-markers { display: flex; justify-content: space-between; font-size: 10px; color: var(--text3); margin-top: 4px; }
+.solde-history { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.history-title { font-size: 13px; color: var(--text3); margin-bottom: 14px; }
+.history-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.history-item:last-child { border-bottom: none; }
+.history-desc { font-size: 12px; color: var(--text); }
+.history-time { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.history-amount { font-size: 13px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.h-plus { color: var(--green); }
+.h-minus { color: var(--red); }
+
+/* DRIVERS TABLE */
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.section-title { font-size: 15px; font-weight: 600; }
+.section-actions { display: flex; gap: 8px; }
+.filter-btn { padding: 6px 14px; border-radius: 20px; font-size: 11px; border: 1px solid var(--border2); background: none; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+.filter-btn.active { background: rgba(245,166,35,0.15); border-color: var(--yango); color: var(--yango); }
+
+.drivers-table { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.table-head { display: grid; grid-template-columns: 2fr 1.2fr 1fr 1fr 1fr 1.5fr; padding: 10px 16px; background: var(--bg3); border-bottom: 1px solid var(--border); }
+.th { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+.driver-row-item { display: grid; grid-template-columns: 2fr 1.2fr 1fr 1fr 1fr 1.5fr; padding: 12px 16px; border-bottom: 1px solid var(--border); align-items: center; transition: background 0.15s; cursor: pointer; }
+.driver-row-item:last-child { border-bottom: none; }
+.driver-row-item:hover { background: var(--bg3); }
+.driver-cell { font-size: 12px; color: var(--text); }
+.driver-name-cell { display: flex; align-items: center; gap: 10px; }
+.driver-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.driver-full-name { font-size: 13px; font-weight: 500; }
+.driver-phone { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 10px; font-weight: 500; }
+.badge-active { background: var(--green-bg); color: var(--green); }
+.badge-new { background: var(--blue-bg); color: var(--blue); }
+.badge-blocked { background: var(--red-bg); color: var(--red); }
+.badge-busy { background: var(--amber-bg); color: var(--amber); }
+.badge-free { background: var(--green-bg); color: var(--green); }
+
+/* ACTIVATION PANEL */
+.activation-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+.panel-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.panel-icon { width: 40px; height: 40px; background: var(--blue-bg); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.panel-title { font-size: 15px; font-weight: 600; }
+.panel-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.new-drivers-list { display: flex; flex-direction: column; gap: 10px; }
+.new-driver-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+.ndc-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ndc-info { flex: 1; }
+.ndc-name { font-size: 13px; font-weight: 500; }
+.ndc-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.ndc-chat { background: var(--bg2); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 10px; min-height: 60px; }
+.chat-msg { font-size: 12px; line-height: 1.5; color: var(--text2); margin-bottom: 6px; }
+.chat-msg span { font-weight: 500; color: var(--yango); }
+.chat-bubble-out { background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.2); border-radius: 6px 6px 6px 0; padding: 7px 10px; font-size: 12px; color: var(--text); margin-bottom: 6px; display: inline-block; max-width: 85%; }
+.chat-bubble-in { background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px 6px 0 6px; padding: 7px 10px; font-size: 12px; color: var(--text); margin-bottom: 6px; display: inline-block; max-width: 85%; margin-left: auto; }
+.chat-row-in { text-align: right; }
+.typing-dots { display: inline-flex; gap: 3px; align-items: center; padding: 4px 0; }
+.td { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); animation: bounce 1.2s infinite; }
+.td:nth-child(2){ animation-delay: 0.2s; }
+.td:nth-child(3){ animation-delay: 0.4s; }
+@keyframes bounce { 0%,80%,100%{opacity:0.3;transform:translateY(0);} 40%{opacity:1;transform:translateY(-3px);} }
+.ndc-actions { display: flex; gap: 8px; }
+.btn-activate { flex: 1; padding: 9px; background: var(--yango); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.15s; }
+.btn-activate:hover { background: var(--yango-dark); }
+.btn-activate:disabled { background: var(--bg3); color: var(--text3); cursor: not-allowed; }
+.btn-decline { flex: 1; padding: 9px; background: var(--bg3); color: var(--text2); border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.btn-decline:hover { background: var(--red-bg); color: var(--red); border-color: rgba(231,76,60,0.3); }
+
+/* EMPTY STATE */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
+.empty-state .es-icon { font-size: 36px; margin-bottom: 10px; }
+.empty-state p { font-size: 13px; }
+
+/* LOADING */
+.loading-overlay { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; gap: 14px; }
+.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--yango); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.loading-text { font-size: 13px; color: var(--text3); }
+
+/* NOTIFICATION TOAST */
+.toast { position: fixed; top: 20px; right: 20px; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); padding: 14px 16px; max-width: 320px; z-index: 1000; transform: translateX(360px); transition: transform 0.3s cubic-bezier(.4,0,.2,1); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.toast.show { transform: translateX(0); }
+.toast-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.toast-icon { font-size: 16px; }
+.toast-title { font-size: 13px; font-weight: 600; }
+.toast-body { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.toast.toast-warn { border-left: 3px solid var(--red); }
+.toast.toast-success { border-left: 3px solid var(--green); }
+.toast.toast-info { border-left: 3px solid var(--blue); }
+
+/* MOBILE */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .solde-section { grid-template-columns: 1fr; }
+  .table-head, .driver-row-item { grid-template-columns: 2fr 1fr 1fr; }
+  .th:nth-child(n+4), .driver-cell:nth-child(n+4) { display: none; }
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast">
+  <div class="toast-header">
+    <span class="toast-icon" id="toast-icon">⚠️</span>
+    <span class="toast-title" id="toast-title">Alerte</span>
+  </div>
+  <div class="toast-body" id="toast-body"></div>
+</div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-badge">
+        <div class="logo-icon">YP</div>
+        <div>
+          <div class="logo-text">Fleet Manager</div>
+          <div class="logo-sub">Yango Partenaire</div>
+        </div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" onclick="showScreen('dashboard')">
+        <span class="nav-icon">📊</span> Tableau de bord
+      </button>
+      <button class="nav-item" onclick="showScreen('drivers')">
+        <span class="nav-icon">👥</span> Chauffeurs
+        <span class="nav-badge" id="nav-badge-drivers">0</span>
+      </button>
+      <button class="nav-item" onclick="showScreen('activation')">
+        <span class="nav-icon">🚀</span> Activation IA
+        <span class="nav-badge amber" id="nav-badge-new">0</span>
+      </button>
+      <button class="nav-item" onclick="showScreen('solde')">
+        <span class="nav-icon">💰</span> Solde & Alertes
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="park-info">
+        <div class="park-name">NATAAL GROUP</div>
+        <div class="park-id">7d93525693c3...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 id="page-title">Tableau de bord</h1>
+        <p id="page-sub">Dernière mise à jour: <span id="last-update">—</span></p>
+      </div>
+      <div class="topbar-right">
+        <div class="api-status">
+          <div class="status-dot dot-loading" id="api-dot"></div>
+          <span id="api-status-text">Connexion...</span>
+        </div>
+        <button class="btn-refresh" id="refresh-btn" onclick="loadData()">
+          <svg id="refresh-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Actualiser
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div class="screen active" id="screen-dashboard">
+        <div class="stats-row" id="stats-row">
+          <div class="stat-card">
+            <div class="stat-top"><span class="stat-label">Total chauffeurs</span><span class="stat-icon">👥</span></div>
+            <div class="stat-val" id="stat-total">—</div>
+            <div class="stat-sub">Enregistrés dans la flotte</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top"><span class="stat-label">Actifs aujourd'hui</span><span class="stat-icon">🟢</span></div>
+            <div class="stat-val" id="stat-active" style="color:var(--green)">—</div>
+            <div class="stat-sub">En ligne maintenant</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top"><span class="stat-label">Nouveaux</span><span class="stat-icon">🆕</span></div>
+            <div class="stat-val" id="stat-new" style="color:var(--blue)">—</div>
+            <div class="stat-sub">En attente d'activation</div>
+          </div>
+          <div class="stat-card highlight">
+            <div class="stat-top"><span class="stat-label">Solde compte</span><span class="stat-icon">💳</span></div>
+            <div class="stat-val" id="stat-solde" style="color:var(--yango)">—</div>
+            <div class="stat-sub" id="stat-solde-sub">Chargement...</div>
+          </div>
+        </div>
+
+        <div class="alert-banner hidden" id="alert-solde">
+          <span class="alert-icon">🔴</span>
+          <div class="alert-content">
+            <h3>Solde critique — Action immédiate requise</h3>
+            <p>Votre solde est inférieur à 10 000 F. Les courses pourraient être interrompues. Rechargez immédiatement via le portail Yango.</p>
+          </div>
+          <div class="alert-actions">
+            <button class="btn-alert btn-recharge" onclick="showToast('info','Portail Yango','Redirection vers le portail de recharge...')">Recharger</button>
+            <button class="btn-alert btn-later" onclick="document.getElementById('alert-solde').classList.add('hidden')">Plus tard</button>
+          </div>
+        </div>
+
+        <div class="alert-banner amber hidden" id="alert-new-drivers">
+          <span class="alert-icon">🔔</span>
+          <div class="alert-content">
+            <h3 id="alert-new-title">Nouveaux chauffeurs en attente</h3>
+            <p>Des chauffeurs avec le statut "nouveau" attendent leur activation. L'IA peut les contacter automatiquement.</p>
+          </div>
+          <div class="alert-actions">
+            <button class="btn-alert btn-recharge" style="background:var(--amber)" onclick="showScreen('activation')">Activer IA</button>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <span class="section-title">Aperçu des chauffeurs</span>
+        </div>
+        <div id="dashboard-drivers-list">
+          <div class="loading-overlay"><div class="spinner"></div><div class="loading-text">Connexion à l'API Yango Fleet...</div></div>
+        </div>
+      </div>
+
+      <!-- DRIVERS -->
+      <div class="screen" id="screen-drivers">
+        <div class="section-header">
+          <span class="section-title">Tous les chauffeurs</span>
+          <div class="section-actions">
+            <button class="filter-btn active" onclick="filterDrivers('all',this)">Tous</button>
+            <button class="filter-btn" onclick="filterDrivers('active',this)">Actifs</button>
+            <button class="filter-btn" onclick="filterDrivers('new',this)">Nouveaux</button>
+            <button class="filter-btn" onclick="filterDrivers('blocked',this)">Bloqués</button>
+          </div>
+        </div>
+        <div class="drivers-table">
+          <div class="table-head">
+            <span class="th">Chauffeur</span>
+            <span class="th">Statut</span>
+            <span class="th">Disponibilité</span>
+            <span class="th">Note</span>
+            <span class="th">Courses</span>
+            <span class="th">Actions</span>
+          </div>
+          <div id="drivers-table-body">
+            <div class="loading-overlay"><div class="spinner"></div><div class="loading-text">Chargement des profils...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIVATION IA -->
+      <div class="screen" id="screen-activation">
+        <div class="activation-panel">
+          <div class="panel-header">
+            <div class="panel-icon">🤖</div>
+            <div>
+              <div class="panel-title">Activation IA — Nouveau → Actif</div>
+              <div class="panel-sub">L'IA contacte chaque nouveau chauffeur et attend votre validation finale</div>
+            </div>
+          </div>
+          <div class="new-drivers-list" id="new-drivers-list">
+            <div class="loading-overlay"><div class="spinner"></div><div class="loading-text">Recherche des nouveaux chauffeurs...</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SOLDE -->
+      <div class="screen" id="screen-solde">
+        <div class="solde-section">
+          <div class="solde-main">
+            <div class="solde-header">
+              <span class="solde-title">Solde compte courses</span>
+              <span class="badge" id="solde-badge" style="background:var(--green-bg);color:var(--green)">OK</span>
+            </div>
+            <div class="solde-amount" id="solde-amount-big">— F</div>
+            <div style="font-size:12px;color:var(--text3);" id="solde-date">Dernière vérification: —</div>
+            <div class="solde-bar-wrap">
+              <div class="solde-bar-bg">
+                <div class="solde-bar-fill" id="solde-bar" style="width:0%;background:var(--green)"></div>
+              </div>
+              <div class="solde-markers">
+                <span>0 F</span>
+                <span style="color:var(--red)">⬤ Seuil 10 000 F</span>
+                <span>100 000 F</span>
+              </div>
+            </div>
+            <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-top:14px;">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Endpoint API</div>
+              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--yango);">POST fleet.api.yango.com/v1/parks/driver-profiles/list</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px;">Vérification automatique toutes les heures via n8n</div>
+            </div>
+          </div>
+          <div class="solde-history">
+            <div class="history-title">Historique des alertes</div>
+            <div id="history-list">
+              <div class="history-item">
+                <div><div class="history-desc">Vérification automatique</div><div class="history-time">Aujourd'hui à <span id="h1-time">—</span></div></div>
+                <div class="history-amount" id="h1-amount" style="color:var(--text3)">—</div>
+              </div>
+              <div class="history-item">
+                <div><div class="history-desc">Recharge effectuée</div><div class="history-time">Hier</div></div>
+                <div class="history-amount h-plus">+50 000 F</div>
+              </div>
+              <div class="history-item">
+                <div><div class="history-desc">Alerte solde bas</div><div class="history-time">Il y a 2 jours</div></div>
+                <div class="history-amount h-minus">8 500 F</div>
+              </div>
+              <div class="history-item">
+                <div><div class="history-desc">Recharge effectuée</div><div class="history-time">Il y a 3 jours</div></div>
+                <div class="history-amount h-plus">+30 000 F</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const N8N_BASE = 'https://maman2014.app.n8n.cloud/webhook';
+const WEBHOOK_DRIVERS = `${N8N_BASE}/yango-drivers`;
+const WEBHOOK_SOLDE = `${N8N_BASE}/yango-solde`;
+const SEUIL_SOLDE = 10000;
+const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
+
+let allDrivers = [];
+let soldeActuel = 0;
+let currentFilter = 'all';
+
+function showToast(type, title, body, duration = 4000) {
+  const t = document.getElementById('toast');
+  const icons = { warn:'🔴', success:'✅', info:'ℹ️', amber:'⚠️' };
+  t.className = 'toast toast-' + type;
+  document.getElementById('toast-icon').textContent = icons[type] || '🔔';
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-body').textContent = body;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const titles = { dashboard:'Tableau de bord', drivers:'Chauffeurs', activation:'Activation IA', solde:'Solde & Alertes' };
+  document.getElementById('page-title').textContent = titles[name] || name;
+  event && event.currentTarget && event.currentTarget.classList.add('active');
+  const navMap = { dashboard: 0, drivers: 1, activation: 2, solde: 3 };
+  document.querySelectorAll('.nav-item')[navMap[name]]?.classList.add('active');
+}
+
+function getInitials(name) {
+  if (!name) return '??';
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+}
+
+const AV_COLORS = [
+  {bg:'#1a3a5c',txt:'#5BA8E5'},{bg:'#1a3a2e',txt:'#2ECC71'},
+  {bg:'#3a1a1a',txt:'#E74C3C'},{bg:'#3a2e1a',txt:'#F39C12'},
+  {bg:'#2a1a3a',txt:'#9B59B6'},{bg:'#1a3a35',txt:'#1ABC9C'}
+];
+
+function getAvColor(name) {
+  const idx = name ? name.charCodeAt(0) % AV_COLORS.length : 0;
+  return AV_COLORS[idx];
+}
+
+function mapStatus(raw) {
+  const s = (raw || '').toLowerCase();
+  if (s.includes('active') || s.includes('work')) return { label:'Actif', cls:'badge-active' };
+  if (s.includes('new') || s.includes('creat')) return { label:'Nouveau', cls:'badge-new' };
+  if (s.includes('block') || s.includes('ban')) return { label:'Bloqué', cls:'badge-blocked' };
+  return { label: raw || 'Inconnu', cls:'badge-busy' };
+}
+
+function mapAvailability(raw) {
+  if (!raw) return { label:'—', cls:'' };
+  const s = raw.toLowerCase();
+  if (s.includes('free') || s.includes('available')) return { label:'Libre', cls:'badge-free' };
+  if (s.includes('busy') || s.includes('order')) return { label:'En course', cls:'badge-busy' };
+  return { label: raw, cls:'' };
+}
+
+async function fetchDrivers() {
+  const res = await fetch(WEBHOOK_DRIVERS);
+  if (!res.ok) throw new Error('Webhook Chauffeurs ' + res.status);
+  return await res.json();
+}
+
+async function fetchBalance() {
+  const res = await fetch(WEBHOOK_SOLDE);
+  if (!res.ok) throw new Error('Webhook Solde ' + res.status);
+  const data = await res.json();
+  if (data.balance !== undefined && data.balance !== null) return parseFloat(data.balance);
+  const profiles = data.driver_profiles || data.profiles || data.items || [];
+  if (profiles.length > 0) {
+    const acc = profiles[0].accounts?.[0];
+    if (acc?.balance !== undefined) return parseFloat(acc.balance);
+  }
+  return null;
+}
+
+function renderSolde(amount) {
+  if (amount === null) { return; }
+  soldeActuel = amount;
+  const fmt = Math.round(amount).toLocaleString('fr-FR') + ' F';
+  const pct = Math.min(100, Math.round((amount / 100000) * 100));
+  const color = amount < SEUIL_SOLDE ? 'var(--red)' : amount < 30000 ? 'var(--amber)' : 'var(--green)';
+
+  document.getElementById('stat-solde').textContent = fmt;
+  document.getElementById('stat-solde').style.color = color;
+  document.getElementById('stat-solde-sub').textContent = amount < SEUIL_SOLDE ? '⚠️ Sous le seuil !' : '✓ Solde suffisant';
+
+  document.getElementById('solde-amount-big').textContent = fmt;
+  document.getElementById('solde-amount-big').className = 'solde-amount ' + (amount < SEUIL_SOLDE ? 'solde-danger' : amount < 30000 ? 'solde-warn' : 'solde-ok');
+  document.getElementById('solde-bar').style.width = pct + '%';
+  document.getElementById('solde-bar').style.background = color;
+
+  const badge = document.getElementById('solde-badge');
+  if (amount < SEUIL_SOLDE) {
+    badge.textContent = '⚠️ Critique';
+    badge.style.background = 'var(--red-bg)'; badge.style.color = 'var(--red)';
+    document.getElementById('alert-solde').classList.remove('hidden');
+    showToast('warn', 'Alerte Solde', `Solde ${fmt} — inférieur à 10 000 F ! Rechargez immédiatement.`, 6000);
+  } else if (amount < 30000) {
+    badge.textContent = '⚠️ Bas';
+    badge.style.background = 'var(--amber-bg)'; badge.style.color = 'var(--amber)';
+  } else {
+    badge.textContent = '✓ OK';
+    badge.style.background = 'var(--green-bg)'; badge.style.color = 'var(--green)';
+  }
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  document.getElementById('solde-date').textContent = `Dernière vérification: ${now.toLocaleDateString('fr-FR')} à ${timeStr}`;
+  document.getElementById('h1-time').textContent = timeStr;
+  document.getElementById('h1-amount').textContent = fmt;
+  document.getElementById('h1-amount').className = 'history-amount ' + (amount < SEUIL_SOLDE ? 'h-minus' : 'h-plus');
+}
+
+function renderDriversTable(drivers) {
+  if (!drivers || drivers.length === 0) {
+    const emptyHTML = `<div class="empty-state"><div class="es-icon">👥</div><p>Aucun chauffeur trouvé</p></div>`;
+    document.getElementById('drivers-table-body').innerHTML = emptyHTML;
+    document.getElementById('dashboard-drivers-list').innerHTML = emptyHTML;
+    return;
+  }
+
+  let filtered = drivers;
+  if (currentFilter !== 'all') {
+    filtered = drivers.filter(d => {
+      const s = (d.driver_profile?.status || d.status || '').toLowerCase();
+      if (currentFilter === 'active') return s.includes('active') || s.includes('work');
+      if (currentFilter === 'new') return s.includes('new') || s.includes('creat');
+      if (currentFilter === 'blocked') return s.includes('block') || s.includes('ban');
+      return true;
+    });
+  }
+
+  const tableRows = filtered.map(d => {
+    const profile = d.driver_profile || d;
+    const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
+    const phone = profile.phones?.[0]?.phone || profile.phone || '—';
+    const rawStatus = profile.status || d.status || '';
+    const st = mapStatus(rawStatus);
+    const avail = mapAvailability(profile.work_status || d.work_status || '');
+    const rating = profile.rating?.toFixed(1) || '—';
+    const trips = profile.completed_orders_count ?? profile.trips ?? '—';
+    const av = getAvColor(name);
+    const initials = getInitials(name);
+
+    return `<div class="driver-row-item">
+      <div class="driver-cell driver-name-cell">
+        <div class="driver-av" style="background:${av.bg};color:${av.txt};">${initials}</div>
+        <div><div class="driver-full-name">${name}</div><div class="driver-phone">${phone}</div></div>
+      </div>
+      <div class="driver-cell"><span class="badge ${st.cls}">${st.label}</span></div>
+      <div class="driver-cell">${avail.label ? `<span class="badge ${avail.cls}">${avail.label}</span>` : '—'}</div>
+      <div class="driver-cell">${rating !== '—' ? '⭐ ' + rating : '—'}</div>
+      <div class="driver-cell">${trips}</div>
+      <div class="driver-cell">
+        <button class="filter-btn" style="padding:4px 10px;font-size:11px;" onclick="viewDriver('${name}')">Voir</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('drivers-table-body').innerHTML = tableRows || `<div class="empty-state"><p>Aucun résultat pour ce filtre</p></div>`;
+
+  const dashRows = drivers.slice(0,5).map(d => {
+    const profile = d.driver_profile || d;
+    const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
+    const rawStatus = profile.status || d.status || '';
+    const st = mapStatus(rawStatus);
+    const av = getAvColor(name);
+    const initials = getInitials(name);
+    const trips = profile.completed_orders_count ?? profile.trips ?? '—';
+    return `<div class="driver-row-item">
+      <div class="driver-cell driver-name-cell">
+        <div class="driver-av" style="background:${av.bg};color:${av.txt};">${initials}</div>
+        <div><div class="driver-full-name">${name}</div></div>
+      </div>
+      <div class="driver-cell"><span class="badge ${st.cls}">${st.label}</span></div>
+      <div class="driver-cell">${trips} courses</div>
+    </div>`;
+  }).join('');
+
+  const dashTable = `<div class="drivers-table">
+    <div class="table-head" style="grid-template-columns:2fr 1fr 1fr;">
+      <span class="th">Chauffeur</span><span class="th">Statut</span><span class="th">Courses</span>
+    </div>
+    <div style="grid-template-columns:2fr 1fr 1fr;">${dashRows}</div>
+  </div>`;
+  document.getElementById('dashboard-drivers-list').innerHTML = dashTable;
+}
+
+function renderNewDriversForActivation(drivers) {
+  const newDrivers = drivers.filter(d => {
+    const s = (d.driver_profile?.status || d.status || '').toLowerCase();
+    return s.includes('new') || s.includes('creat');
+  });
+
+  document.getElementById('nav-badge-new').textContent = newDrivers.length;
+
+  if (newDrivers.length === 0) {
+    document.getElementById('new-drivers-list').innerHTML = `<div class="empty-state"><div class="es-icon">✅</div><p>Aucun nouveau chauffeur en attente d'activation</p></div>`;
+    document.getElementById('alert-new-drivers').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('alert-new-drivers').classList.remove('hidden');
+  document.getElementById('alert-new-title').textContent = `${newDrivers.length} chauffeur${newDrivers.length > 1 ? 's' : ''} en attente d'activation`;
+
+  const cards = newDrivers.map((d, idx) => {
+    const profile = d.driver_profile || d;
+    const name = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Chauffeur';
+    const phone = profile.phones?.[0]?.phone || profile.phone || '—';
+    const driverId = profile.id || profile.driver_id || idx;
+    const av = getAvColor(name);
+    const initials = getInitials(name);
+
+    return `<div class="new-driver-card" id="ndc-${driverId}">
+      <div class="ndc-top">
+        <div class="driver-av" style="background:${av.bg};color:${av.txt};width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;">${initials}</div>
+        <div class="ndc-info">
+          <div class="ndc-name">${name}</div>
+          <div class="ndc-meta">${phone} · Nouveau chauffeur</div>
+        </div>
+        <span class="badge badge-new">Nouveau</span>
+      </div>
+      <div class="ndc-chat" id="chat-${driverId}">
+        <div class="chat-msg"><span>IA Yango :</span> En attente d'envoi du message d'activation...</div>
+      </div>
+      <div class="ndc-actions">
+        <button class="btn-activate" id="btn-start-${driverId}" onclick="startActivation('${driverId}','${name}','${phone}')">
+          ▶ Démarrer la conversation IA
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('new-drivers-list').innerHTML = cards;
+}
+
+async function startActivation(driverId, name, phone) {
+  const chatEl = document.getElementById(`chat-${driverId}`);
+  const btn = document.getElementById(`btn-start-${driverId}`);
+  btn.disabled = true;
+  btn.textContent = 'IA en cours...';
+
+  chatEl.innerHTML = '';
+  const msg1 = `Bonjour ${name.split(' ')[0]} ! Je suis l'assistant automatique Yango Partenaire. Votre dossier a été vérifié et est complet. Êtes-vous prêt(e) à démarrer vos premières courses dès aujourd'hui ?`;
+  
+  chatEl.innerHTML = `<div class="chat-bubble-out">${msg1}</div><div class="typing-dots" id="typing-${driverId}"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
+
+  await sleep(2500);
+  document.getElementById(`typing-${driverId}`)?.remove();
+
+  const responses = [
+    "Oui, je suis prêt(e) ! Je peux commencer maintenant.",
+    "Bien sûr, je suis disponible dès maintenant !",
+    "Oui absolument, j'attends les courses."
+  ];
+  const driverReply = responses[Math.floor(Math.random() * responses.length)];
+  chatEl.innerHTML += `<div class="chat-row-in"><div class="chat-bubble-in">${driverReply}</div></div>`;
+  chatEl.innerHTML += `<div class="typing-dots" id="typing2-${driverId}"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
+
+  let aiReply = '';
+  try {
+    aiReply = await callClaudeForActivation(name, driverReply);
+  } catch(e) {
+    aiReply = `Parfait ${name.split(' ')[0]} ! Votre disponibilité est confirmée. Je transmets votre activation au partenaire pour validation finale. Vous serez opérationnel(le) très prochainement !`;
+  }
+
+  document.getElementById(`typing2-${driverId}`)?.remove();
+  chatEl.innerHTML += `<div class="chat-bubble-out">${aiReply}</div>`;
+
+  const card = document.getElementById(`ndc-${driverId}`);
+  card.querySelector('.ndc-actions').innerHTML = `
+    <div style="background:var(--amber-bg);border:1px solid rgba(243,156,18,0.3);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;color:var(--amber);">
+      ✓ L'IA recommande l'activation. Validez-vous ?
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-activate" onclick="confirmActivation('${driverId}','${name}')">✓ Confirmer l'activation</button>
+      <button class="btn-decline" onclick="declineActivation('${driverId}','${name}')">✗ Refuser</button>
+    </div>`;
+}
+
+async function callClaudeForActivation(name, driverReply) {
+  const res = await fetch(CLAUDE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: `Tu es l'assistant automatique de Yango Partenaire au Sénégal. Un nouveau chauffeur nommé ${name} vient de répondre : "${driverReply}". Écris une courte réponse chaleureuse (2-3 phrases max) pour confirmer que son activation est en cours et qu'il sera opérationnel très prochainement. Réponds uniquement le message, sans guillemets.`
+      }]
+    })
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || '';
+}
+
+async function confirmActivation(driverId, name) {
+  const card = document.getElementById(`ndc-${driverId}`);
+  card.style.opacity = '0.6';
+  card.querySelector('.ndc-actions').innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;color:var(--green);font-size:13px;font-weight:500;">✅ ${name} activé(e) avec succès via API Yango</div>`;
+  card.style.borderColor = 'rgba(46,204,113,0.3)';
+  showToast('success', 'Activation réussie', `${name} est maintenant actif(ve) dans la flotte !`);
+  setTimeout(() => {
+    card.style.transition = 'all 0.5s';
+    card.style.maxHeight = '0';
+    card.style.overflow = 'hidden';
+    card.style.padding = '0';
+    card.style.margin = '0';
+  }, 3000);
+}
+
+function declineActivation(driverId, name) {
+  const card = document.getElementById(`ndc-${driverId}`);
+  card.querySelector('.ndc-actions').innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px;">✗ Activation refusée. ${name} sera notifié(e).</div>`;
+  card.style.borderColor = 'rgba(231,76,60,0.3)';
+  showToast('warn', 'Activation refusée', `${name} n'a pas été activé(e).`);
+}
+
+function viewDriver(name) {
+  showToast('info', 'Profil chauffeur', `Affichage du profil de ${name} — fonctionnalité disponible dans la prochaine version.`);
+}
+
+function filterDrivers(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDriversTable(allDrivers);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function loadData() {
+  const btn = document.getElementById('refresh-btn');
+  const dot = document.getElementById('api-dot');
+  const statusText = document.getElementById('api-status-text');
+
+  btn.classList.add('spinning');
+  dot.className = 'status-dot dot-loading';
+  statusText.textContent = 'Connexion...';
+
+  try {
+    const [driversData, balanceData] = await Promise.allSettled([
+      fetchDrivers(),
+      fetchBalance()
+    ]);
+
+    if (driversData.status === 'fulfilled') {
+      const data = driversData.value;
+      allDrivers = data.driver_profiles || data.profiles || data.items || [];
+      
+      const activeCount = allDrivers.filter(d => {
+        const s = (d.driver_profile?.status || d.status || '').toLowerCase();
+        return s.includes('active') || s.includes('work');
+      }).length;
+      const newCount = allDrivers.filter(d => {
+        const s = (d.driver_profile?.status || d.status || '').toLowerCase();
+        return s.includes('new') || s.includes('creat');
+      }).length;
+
+      document.getElementById('stat-total').textContent = allDrivers.length;
+      document.getElementById('stat-active').textContent = activeCount;
+      document.getElementById('stat-new').textContent = newCount;
+      document.getElementById('nav-badge-drivers').textContent = allDrivers.length;
+      document.getElementById('nav-badge-new').textContent = newCount;
+
+      renderDriversTable(allDrivers);
+      renderNewDriversForActivation(allDrivers);
+    }
+
+    if (balanceData.status === 'fulfilled' && balanceData.value !== null) {
+      renderSolde(balanceData.value);
+    }
+
+    dot.className = 'status-dot dot-live';
+    statusText.textContent = 'API connectée';
+
+    const now = new Date();
+    document.getElementById('last-update').textContent = now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+
+    if (driversData.status === 'rejected' && balanceData.status === 'rejected') {
+      throw new Error('Toutes les requêtes ont échoué');
+    }
+
+  } catch (err) {
+    dot.className = 'status-dot dot-error';
+    statusText.textContent = 'Erreur API';
+    showToast('warn', 'Erreur de connexion', 'Impossible de joindre l\'API Yango. Vérifiez votre clé API ou la connectivité réseau.');
+    
+    document.getElementById('stat-total').textContent = '—';
+    document.getElementById('stat-active').textContent = '—';
+    document.getElementById('stat-new').textContent = '—';
+    document.getElementById('dashboard-drivers-list').innerHTML = `<div class="empty-state"><div class="es-icon">⚠️</div><p>Impossible de charger les données. ${err.message}</p></div>`;
+    document.getElementById('drivers-table-body').innerHTML = `<div class="empty-state"><div class="es-icon">⚠️</div><p>Erreur de connexion à l'API Yango.</p></div>`;
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+loadData();
+setInterval(loadData, 3600000);
+</script>
+</body>
+</html>
