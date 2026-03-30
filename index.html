@@ -403,7 +403,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
             </div>
             <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-top:14px;">
               <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Endpoint API</div>
-              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--yango);">POST fleet.api.yango.com/v1/parks/driver-profiles/list</div>
+              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--yango);">GET webhook n8n → fleet.api.yango.com (solde en FCFA)</div>
               <div style="font-size:11px;color:var(--text3);margin-top:6px;">Vérification automatique toutes les heures via n8n</div>
             </div>
           </div>
@@ -513,16 +513,17 @@ async function fetchBalance() {
   const res = await fetch(WEBHOOK_SOLDE);
   if (!res.ok) throw new Error('Webhook Solde ' + res.status);
   const data = await res.json();
+  const EUR_TO_FCFA = 655.957;
   if (data.balance !== undefined && data.balance !== null) {
-    const raw = parseFloat(data.balance);
-    return Math.abs(raw) > 1000 ? raw / 100 : raw;
+    const euros = parseFloat(data.balance) / 100;
+    return Math.round(euros * EUR_TO_FCFA);
   }
   const profiles = data.driver_profiles || data.profiles || data.items || [];
   if (profiles.length > 0) {
     const acc = profiles[0].accounts?.[0];
     if (acc?.balance !== undefined) {
-      const raw = parseFloat(acc.balance);
-      return Math.abs(raw) > 1000 ? raw / 100 : raw;
+      const euros = parseFloat(acc.balance) / 100;
+      return Math.round(euros * EUR_TO_FCFA);
     }
   }
   return null;
@@ -532,7 +533,7 @@ function renderSolde(amount) {
   if (amount === null) { return; }
   soldeActuel = amount;
   const fmt = Math.round(amount).toLocaleString('fr-FR') + ' F';
-  const pct = Math.min(100, Math.round((amount / 100000) * 100));
+  const pct = Math.min(100, Math.round((Math.max(0,amount) / 200000) * 100));
   const color = amount < SEUIL_SOLDE ? 'var(--red)' : amount < 30000 ? 'var(--amber)' : 'var(--green)';
 
   document.getElementById('stat-solde').textContent = fmt;
@@ -560,7 +561,8 @@ function renderSolde(amount) {
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-  document.getElementById('solde-date').textContent = `Dernière vérification: ${now.toLocaleDateString('fr-FR')} à ${timeStr}`;
+  const eur = (amount / 655.957).toFixed(2);
+  document.getElementById('solde-date').textContent = `Dernière vérif: ${now.toLocaleDateString('fr-FR')} à ${timeStr} · ${eur} €`;
   document.getElementById('h1-time').textContent = timeStr;
   document.getElementById('h1-amount').textContent = fmt;
   document.getElementById('h1-amount').className = 'history-amount ' + (amount < SEUIL_SOLDE ? 'h-minus' : 'h-plus');
@@ -808,13 +810,15 @@ async function loadData() {
       
       const activeCount = allDrivers.filter(d => {
         const profile = d.driver_profile || d;
-        const s = (profile.work_status || profile.status || d.status || '').toLowerCase();
-        return s === 'working' || s === 'active' || s === 'work' || s === 'on_shift' || s === 'free' || s === 'busy' || s === 'in_order';
+        const ws = (profile.work_status || d.work_status || '').toLowerCase();
+        const st = (profile.status || d.status || '').toLowerCase();
+        return ws === 'working' || ws === 'free' || ws === 'busy' || ws === 'in_order' || ws === 'on_shift'
+          || st === 'active' || st === 'working';
       }).length;
       const newCount = allDrivers.filter(d => {
         const profile = d.driver_profile || d;
         const s = (profile.status || d.status || '').toLowerCase();
-        return s === 'new' || s === 'created' || s === 'pending';
+        return s === 'new' || s === 'created' || s === 'pending' || s === 'newbie';
       }).length;
 
       document.getElementById('stat-total').textContent = allDrivers.length;
