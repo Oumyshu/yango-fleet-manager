@@ -629,16 +629,28 @@ function renderDriversTable(drivers) {
       const accA = d.accounts?.[0];
       const lastTxA = accA?.last_transaction_date ? new Date(accA.last_transaction_date) : null;
       const isFired2 = !!d.driver_profile?.fire_date || ws === 'fired';
-      if (currentFilter === 'active') return lastTxA && lastTxA > thirtyDays && ws === 'working' && !isFired2;
+      const dId = d.driver_profile?.id;
+      if (currentFilter === 'active') {
+        if (window.actifsIds) return window.actifsIds.has(dId);
+        return lastTxA && lastTxA > thirtyDays && ws === 'working' && !isFired2;
+      }
       const accF = d.accounts?.[0];
       const neverWorkedF = !accF?.last_transaction_date;
       const isFiredD = !!d.driver_profile?.fire_date || ws === 'fired';
-      if (currentFilter === 'new') return neverWorkedF && ws === 'working' && !isFiredD;
+      const dIdN = d.driver_profile?.id;
+      if (currentFilter === 'new') {
+        if (window.nouveauxIds) return window.nouveauxIds.has(dIdN);
+        return neverWorkedF && ws === 'working' && !isFiredD;
+      }
       const accR = d.accounts?.[0];
       const lastTxR = accR?.last_transaction_date ? new Date(accR.last_transaction_date) : null;
       const thirtyDaysR = new Date(Date.now() - 30*24*60*60*1000);
       const isFiredR = !!d.driver_profile?.fire_date || ws === 'fired';
-      if (currentFilter === 'roulement') return lastTxR && lastTxR <= thirtyDaysR && ws === 'working' && !isFiredR;
+      const dIdR = d.driver_profile?.id;
+      if (currentFilter === 'roulement') {
+        if (window.roulementIds) return window.roulementIds.has(dIdR);
+        return lastTxR && lastTxR <= thirtyDaysR && ws === 'working' && !isFiredR;
+      }
       if (currentFilter === 'blocked') return ws === 'fired' || !!d.driver_profile?.fire_date;
       return true;
     });
@@ -704,8 +716,10 @@ function renderDriversTable(drivers) {
 }
 
 function renderNewDriversForActivation(drivers) {
-  // "Nouveau" = jamais travaillé (no last_transaction_date) + working + not fired
+  // Nouveaux: use IDs from n8n segments if available, else local logic
   const newDrivers = drivers.filter(d => {
+    const dId = d.driver_profile?.id;
+    if (window.nouveauxIds) return window.nouveauxIds.has(dId);
     const ws = (d.driver_profile?.work_status || '').toLowerCase();
     const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
     const acc = d.accounts?.[0];
@@ -940,6 +954,8 @@ async function loadData() {
       const data = driversData.value;
       const rawData = data.raw || data;
       allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
+      // Use pre-calculated segments from n8n if available
+      const segments = data.segments || null;
       
       // "Actifs" = a travaillé dans les 30 derniers jours (last_transaction_date récente)
       // Portail: Actifs=27, Roulement=66, Nouveaux=3
