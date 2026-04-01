@@ -403,8 +403,9 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
               </div>
             </div>
             <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-top:14px;">
-              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Endpoint API</div>
-              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--yango);">GET webhook n8n → fleet.api.yango.com (solde en FCFA)</div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Endpoints API connectés</div>
+              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--yango);">POST /v1/parks/driver-profiles/list → Solde</div>
+              <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--blue);margin-top:4px;">POST /v2/parks/transactions/list → Historique</div>
               <div style="font-size:11px;color:var(--text3);margin-top:6px;">Vérification automatique toutes les heures via n8n</div>
             </div>
           </div>
@@ -446,6 +447,8 @@ const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
 let allDrivers = [];
 let soldeActuel = 0;
 let currentFilter = 'all';
+let currentDriverId = null;
+let currentDriverName = '';
 
 function showToast(type, title, body, duration = 4000) {
   const t = document.getElementById('toast');
@@ -523,6 +526,38 @@ async function fetchBalance() {
     if (acc?.balance !== undefined) return Math.round(parseFloat(acc.balance));
   }
   return null;
+}
+
+async function fetchTransactions() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const to = now.toISOString();
+  const res = await fetch(WEBHOOK_TRANSACTIONS, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to })
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.transactions || data.items || [];
+}
+
+function renderTransactions(transactions) {
+  if (!transactions || transactions.length === 0) return;
+  const historyEl = document.getElementById('history-list');
+  if (!historyEl) return;
+  const rows = transactions.slice(0, 6).map(t => {
+    const amt = parseFloat(t.amount || 0);
+    const fmt = Math.abs(Math.round(amt)).toLocaleString('fr-FR') + ' F';
+    const isPos = amt > 0;
+    const date = t.event_at ? new Date(t.event_at).toLocaleDateString('fr-FR') : '—';
+    const desc = t.category_name || t.description || t.category_id || 'Transaction';
+    return `<div class="history-item">
+      <div><div class="history-desc">${desc}</div><div class="history-time">${date}</div></div>
+      <div class="history-amount ${isPos ? 'h-plus' : 'h-minus'}">${isPos ? '+' : '-'}${fmt}</div>
+    </div>`;
+  }).join('');
+  historyEl.innerHTML = rows;
 }
 
 function renderSolde(amount) {
@@ -608,7 +643,7 @@ function renderDriversTable(drivers) {
       <div class="driver-cell">${rating !== '—' ? '⭐ ' + rating : '—'}</div>
       <div class="driver-cell">${trips}</div>
       <div class="driver-cell">
-        <button class="filter-btn" style="padding:4px 10px;font-size:11px;" onclick="viewDriver('${name}')">Voir</button>
+        <button class="filter-btn" style="padding:4px 10px;font-size:11px;" onclick="viewDriver('${profile.id || driverId}','${name}')">+ Tx</button>
       </div>
     </div>`;
   }).join('');
@@ -645,8 +680,9 @@ function renderDriversTable(drivers) {
 
 function renderNewDriversForActivation(drivers) {
   const newDrivers = drivers.filter(d => {
-    const s = (d.driver_profile?.status || d.status || '').toLowerCase();
-    return s.includes('new') || s.includes('creat');
+    const license = d.driver_profile?.driver_license?.normalized_number || '';
+    const ws = (d.driver_profile?.work_status || '').toLowerCase();
+    return license.startsWith('DRIVERDRAFT') || ws === 'new' || ws === 'not_working';
   });
 
   document.getElementById('nav-badge-new').textContent = newDrivers.length;
@@ -696,34 +732,24 @@ async function startActivation(driverId, name, phone) {
   const btn = document.getElementById(`btn-start-${driverId}`);
   btn.disabled = true;
   btn.textContent = 'IA en cours...';
-
+  const firstName = name.split(' ')[0];
   chatEl.innerHTML = '';
-  const msg1 = `Bonjour ${name.split(' ')[0]} ! Je suis l'assistant automatique Yango Partenaire. Votre dossier a été vérifié et est complet. Êtes-vous prêt(e) à démarrer vos premières courses dès aujourd'hui ?`;
-  
+  const msg1 = `Bonjour ${firstName} ! Je suis l'assistant automatique Yango Partenaire. Votre dossier a été vérifié. Êtes-vous prêt(e) à démarrer vos premières courses dès aujourd'hui ?`;
   chatEl.innerHTML = `<div class="chat-bubble-out">${msg1}</div><div class="typing-dots" id="typing-${driverId}"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
-
   await sleep(2500);
   document.getElementById(`typing-${driverId}`)?.remove();
-
-  const responses = [
-    "Oui, je suis prêt(e) ! Je peux commencer maintenant.",
-    "Bien sûr, je suis disponible dès maintenant !",
-    "Oui absolument, j'attends les courses."
-  ];
+  const responses = ["Oui, je suis prêt(e) ! Je peux commencer maintenant.", "Bien sûr, je suis disponible !", "Oui absolument, j'attends les courses."];
   const driverReply = responses[Math.floor(Math.random() * responses.length)];
   chatEl.innerHTML += `<div class="chat-row-in"><div class="chat-bubble-in">${driverReply}</div></div>`;
   chatEl.innerHTML += `<div class="typing-dots" id="typing2-${driverId}"><div class="td"></div><div class="td"></div><div class="td"></div></div>`;
-
   let aiReply = '';
   try {
     aiReply = await callClaudeForActivation(name, driverReply);
   } catch(e) {
-    aiReply = `Parfait ${name.split(' ')[0]} ! Votre disponibilité est confirmée. Je transmets votre activation au partenaire pour validation finale. Vous serez opérationnel(le) très prochainement !`;
+    aiReply = `Parfait ${firstName} ! Votre disponibilité est confirmée. Je transmets votre activation au partenaire pour validation finale.`;
   }
-
   document.getElementById(`typing2-${driverId}`)?.remove();
   chatEl.innerHTML += `<div class="chat-bubble-out">${aiReply}</div>`;
-
   const card = document.getElementById(`ndc-${driverId}`);
   card.querySelector('.ndc-actions').innerHTML = `
     <div style="background:var(--amber-bg);border:1px solid rgba(243,156,18,0.3);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;color:var(--amber);">
@@ -754,17 +780,41 @@ async function callClaudeForActivation(name, driverReply) {
 
 async function confirmActivation(driverId, name) {
   const card = document.getElementById(`ndc-${driverId}`);
-  card.style.opacity = '0.6';
-  card.querySelector('.ndc-actions').innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;color:var(--green);font-size:13px;font-weight:500;">✅ ${name} activé(e) avec succès via API Yango</div>`;
-  card.style.borderColor = 'rgba(46,204,113,0.3)';
-  showToast('success', 'Activation réussie', `${name} est maintenant actif(ve) dans la flotte !`);
-  setTimeout(() => {
-    card.style.transition = 'all 0.5s';
-    card.style.maxHeight = '0';
-    card.style.overflow = 'hidden';
-    card.style.padding = '0';
-    card.style.margin = '0';
-  }, 3000);
+  card.querySelector('.ndc-actions').innerHTML = `<div style="color:var(--amber);font-size:12px;padding:8px;">⏳ Activation en cours via API Yango...</div>`;
+  
+  const driver = allDrivers.find(d => (d.driver_profile?.id || d.id) === driverId);
+  const profile = driver?.driver_profile || {};
+  
+  try {
+    const res = await fetch(WEBHOOK_ACTIVATE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contractor_profile_id: driverId,
+        first_name: profile.first_name || name.split(' ')[0],
+        last_name: profile.last_name || name.split(' ')[1] || '',
+        phone: (Array.isArray(profile.phones) ? profile.phones[0] : profile.phone) || '',
+        work_rule_id: profile.work_rule_id || 'e26a3cf21acfe01198d50030487e046b',
+        license_number: profile.driver_license?.normalized_number || '',
+        license_expiry: profile.driver_license?.expiration_date?.split('T')[0] || '2030-01-01',
+        license_issue: profile.driver_license?.issue_date?.split('T')[0] || '2020-01-01'
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      card.style.opacity = '0.7';
+      card.querySelector('.ndc-actions').innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px;color:var(--green);font-size:13px;font-weight:500;">✅ ${name} activé(e) avec succès</div>`;
+      card.style.borderColor = 'rgba(46,204,113,0.3)';
+      showToast('success', 'Activation réussie !', `${name} est maintenant actif(ve) dans la flotte Yango.`);
+      setTimeout(() => { card.style.transition='all 0.5s'; card.style.maxHeight='0'; card.style.overflow='hidden'; card.style.padding='0'; card.style.margin='0'; }, 3000);
+    } else {
+      card.querySelector('.ndc-actions').innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px;">⚠️ Erreur: ${data.message || 'Réessayez'}</div>`;
+      showToast('warn', 'Erreur activation', data.message || 'Une erreur est survenue.');
+    }
+  } catch(e) {
+    card.querySelector('.ndc-actions').innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px;">⚠️ Erreur réseau. Réessayez.</div>`;
+    showToast('warn', 'Erreur réseau', 'Impossible de contacter le webhook n8n.');
+  }
 }
 
 function declineActivation(driverId, name) {
@@ -774,8 +824,63 @@ function declineActivation(driverId, name) {
   showToast('warn', 'Activation refusée', `${name} n'a pas été activé(e).`);
 }
 
-function viewDriver(name) {
-  showToast('info', 'Profil chauffeur', `Affichage du profil de ${name} — fonctionnalité disponible dans la prochaine version.`);
+function viewDriver(driverId, name) {
+  currentDriverId = driverId;
+  currentDriverName = name;
+  document.getElementById('modal-title').textContent = `Transaction — ${name}`;
+  document.getElementById('tx-amount').value = '';
+  document.getElementById('tx-desc').value = '';
+  document.getElementById('tx-result').style.display = 'none';
+  const modal = document.getElementById('transaction-modal');
+  modal.style.display = 'flex';
+}
+
+function closeTransactionModal() {
+  document.getElementById('transaction-modal').style.display = 'none';
+}
+
+async function submitTransaction() {
+  const amount = document.getElementById('tx-amount').value;
+  const type = document.getElementById('tx-type').value;
+  const desc = document.getElementById('tx-desc').value;
+  const resultEl = document.getElementById('tx-result');
+
+  if (!amount || amount == 0) {
+    resultEl.style.display = 'block';
+    resultEl.style.background = 'var(--red-bg)';
+    resultEl.style.color = 'var(--red)';
+    resultEl.textContent = 'Montant invalide';
+    return;
+  }
+
+  resultEl.style.display = 'block';
+  resultEl.style.background = 'var(--amber-bg)';
+  resultEl.style.color = 'var(--amber)';
+  resultEl.textContent = '⏳ Envoi en cours...';
+
+  try {
+    const res = await fetch(WEBHOOK_DRIVER_TRANSACTION, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contractor_profile_id: currentDriverId,
+        amount: parseFloat(amount).toFixed(4),
+        type: type,
+        description: desc || 'Transaction Fleet Manager',
+        park_id: '7d93525693c34dd0a70d26e2af81735b'
+      })
+    });
+    const data = await res.json();
+    resultEl.style.background = 'var(--green-bg)';
+    resultEl.style.color = 'var(--green)';
+    resultEl.textContent = '✅ Transaction envoyée avec succès !';
+    showToast('success', 'Transaction réussie', `${parseFloat(amount).toLocaleString('fr-FR')} F envoyé à ${currentDriverName}`);
+    setTimeout(() => closeTransactionModal(), 2000);
+  } catch(e) {
+    resultEl.style.background = 'var(--red-bg)';
+    resultEl.style.color = 'var(--red)';
+    resultEl.textContent = '⚠️ Erreur. Vérifiez le webhook n8n.';
+  }
 }
 
 function filterDrivers(filter, btn) {
@@ -797,9 +902,10 @@ async function loadData() {
   statusText.textContent = 'Connexion...';
 
   try {
-    const [driversData, balanceData] = await Promise.allSettled([
+    const [driversData, balanceData, transactionsData] = await Promise.allSettled([
       fetchDrivers(),
-      fetchBalance()
+      fetchBalance(),
+      fetchTransactions()
     ]);
 
     if (driversData.status === 'fulfilled') {
@@ -830,6 +936,10 @@ async function loadData() {
 
     if (balanceData.status === 'fulfilled' && balanceData.value !== null) {
       renderSolde(balanceData.value);
+    }
+
+    if (transactionsData.status === 'fulfilled') {
+      renderTransactions(transactionsData.value);
     }
 
     dot.className = 'status-dot dot-live';
