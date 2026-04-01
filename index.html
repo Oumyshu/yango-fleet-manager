@@ -300,7 +300,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
           <div class="stat-card">
             <div class="stat-top"><span class="stat-label">Nouveaux</span><span class="stat-icon">🆕</span></div>
             <div class="stat-val" id="stat-new" style="color:var(--blue)">—</div>
-            <div class="stat-sub">En attente d'activation</div>
+            <div class="stat-sub" id="stat-new-sub">En attente d'activation</div>
           </div>
           <div class="stat-card highlight">
             <div class="stat-top"><span class="stat-label">Solde compte</span><span class="stat-icon">💳</span></div>
@@ -348,6 +348,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
             <button class="filter-btn active" onclick="filterDrivers('all',this)">Tous</button>
             <button class="filter-btn" onclick="filterDrivers('active',this)">Actifs</button>
             <button class="filter-btn" onclick="filterDrivers('new',this)">Nouveaux</button>
+            <button class="filter-btn" onclick="filterDrivers('roulement',this)">Roulement</button>
             <button class="filter-btn" onclick="filterDrivers('blocked',this)">Bloqués</button>
           </div>
         </div>
@@ -624,16 +625,21 @@ function renderDriversTable(drivers) {
       const ws = (d.driver_profile?.work_status || '').toLowerCase();
       const cs = (d.current_status?.status || '').toLowerCase();
       const license = d.driver_profile?.driver_license?.normalized_number || '';
-      const updatedAt = d.updated_at ? new Date(d.updated_at) : null;
       const thirtyDays = new Date(Date.now() - 30*24*60*60*1000);
-      const hasCar2 = !!d.car;
+      const accA = d.accounts?.[0];
+      const lastTxA = accA?.last_transaction_date ? new Date(accA.last_transaction_date) : null;
       const isFired2 = !!d.driver_profile?.fire_date || ws === 'fired';
-      if (currentFilter === 'active') return hasCar2 && ws === 'working' && !isFired2 && updatedAt && updatedAt > thirtyDays;
+      if (currentFilter === 'active') return lastTxA && lastTxA > thirtyDays && ws === 'working' && !isFired2;
       const accF = d.accounts?.[0];
       const neverWorkedF = !accF?.last_transaction_date;
       const isFiredD = !!d.driver_profile?.fire_date || ws === 'fired';
       if (currentFilter === 'new') return neverWorkedF && ws === 'working' && !isFiredD;
-      if (currentFilter === 'blocked') return ws === 'fired';
+      const accR = d.accounts?.[0];
+      const lastTxR = accR?.last_transaction_date ? new Date(accR.last_transaction_date) : null;
+      const thirtyDaysR = new Date(Date.now() - 30*24*60*60*1000);
+      const isFiredR = !!d.driver_profile?.fire_date || ws === 'fired';
+      if (currentFilter === 'roulement') return lastTxR && lastTxR <= thirtyDaysR && ws === 'working' && !isFiredR;
+      if (currentFilter === 'blocked') return ws === 'fired' || !!d.driver_profile?.fire_date;
       return true;
     });
   }
@@ -935,16 +941,16 @@ async function loadData() {
       const rawData = data.raw || data;
       allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
       
-      // "Actifs" = has car + working + not fired + updated in last 30 days
-      // Portal shows Actifs 27 = drivers with assigned vehicles actively working
+      // "Actifs" = a travaillé dans les 30 derniers jours (last_transaction_date récente)
+      // Portail: Actifs=27, Roulement=66, Nouveaux=3
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const activeCount = allDrivers.filter(d => {
         const ws = (d.driver_profile?.work_status || '').toLowerCase();
-        const hasCar = !!d.car;
         const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
-        const updatedAt = d.updated_at ? new Date(d.updated_at) : null;
-        const recentlyActive = updatedAt && updatedAt > thirtyDaysAgo;
-        return hasCar && ws === 'working' && !isFired && recentlyActive;
+        const acc = d.accounts?.[0];
+        const lastTx = acc?.last_transaction_date ? new Date(acc.last_transaction_date) : null;
+        const recentlyWorked = lastTx && lastTx > thirtyDaysAgo;
+        return recentlyWorked && ws === 'working' && !isFired;
       }).length;
       // "Nouveau" = jamais fait de course (no last_transaction_date) + working + not fired
       // C'est la vraie logique Yango : Kane, Gomis, Koné n'ont aucune transaction
