@@ -392,6 +392,7 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
             </div>
             <div class="solde-amount" id="solde-amount-big">— F</div>
             <div style="font-size:12px;color:var(--text3);" id="solde-date">Dernière vérification: —</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:6px;" id="solde-note">Solde cumulé des comptes chauffeurs</div>
             <div class="solde-bar-wrap">
               <div class="solde-bar-bg">
                 <div class="solde-bar-fill" id="solde-bar" style="width:0%;background:var(--green)"></div>
@@ -623,8 +624,15 @@ function renderDriversTable(drivers) {
       const ws = (d.driver_profile?.work_status || '').toLowerCase();
       const cs = (d.current_status?.status || '').toLowerCase();
       const license = d.driver_profile?.driver_license?.normalized_number || '';
-      if (currentFilter === 'active') return (cs === 'free' || cs === 'busy') && ws !== 'fired';
-      if (currentFilter === 'new') return license.startsWith('DRIVERDRAFT');
+      const updatedAt = d.updated_at ? new Date(d.updated_at) : null;
+      const thirtyDays = new Date(Date.now() - 30*24*60*60*1000);
+      const hasCar2 = !!d.car;
+      const isFired2 = !!d.driver_profile?.fire_date || ws === 'fired';
+      if (currentFilter === 'active') return hasCar2 && ws === 'working' && !isFired2 && updatedAt && updatedAt > thirtyDays;
+      const accF = d.accounts?.[0];
+      const neverWorkedF = !accF?.last_transaction_date;
+      const isFiredD = !!d.driver_profile?.fire_date || ws === 'fired';
+      if (currentFilter === 'new') return neverWorkedF && ws === 'working' && !isFiredD;
       if (currentFilter === 'blocked') return ws === 'fired';
       return true;
     });
@@ -690,10 +698,13 @@ function renderDriversTable(drivers) {
 }
 
 function renderNewDriversForActivation(drivers) {
+  // "Nouveau" = jamais travaillé (no last_transaction_date) + working + not fired
   const newDrivers = drivers.filter(d => {
-    const license = d.driver_profile?.driver_license?.normalized_number || '';
     const ws = (d.driver_profile?.work_status || '').toLowerCase();
-    return license.startsWith('DRIVERDRAFT') || ws === 'new' || ws === 'not_working';
+    const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
+    const acc = d.accounts?.[0];
+    const neverWorked = !acc?.last_transaction_date;
+    return neverWorked && ws === 'working' && !isFired;
   });
 
   document.getElementById('nav-badge-new').textContent = newDrivers.length;
@@ -924,16 +935,25 @@ async function loadData() {
       const rawData = data.raw || data;
       allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
       
-      // Count drivers currently online (free or busy)
+      // "Actifs" = has car + working + not fired + updated in last 30 days
+      // Portal shows Actifs 27 = drivers with assigned vehicles actively working
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const activeCount = allDrivers.filter(d => {
-        const cs = (d.current_status?.status || '').toLowerCase();
         const ws = (d.driver_profile?.work_status || '').toLowerCase();
-        return (cs === 'free' || cs === 'busy') && ws !== 'fired';
+        const hasCar = !!d.car;
+        const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
+        const updatedAt = d.updated_at ? new Date(d.updated_at) : null;
+        const recentlyActive = updatedAt && updatedAt > thirtyDaysAgo;
+        return hasCar && ws === 'working' && !isFired && recentlyActive;
       }).length;
+      // "Nouveau" = jamais fait de course (no last_transaction_date) + working + not fired
+      // C'est la vraie logique Yango : Kane, Gomis, Koné n'ont aucune transaction
       const newCount = allDrivers.filter(d => {
-        const license = d.driver_profile?.driver_license?.normalized_number || '';
         const ws = (d.driver_profile?.work_status || '').toLowerCase();
-        return license.startsWith('DRIVERDRAFT') || ws === 'new' || ws === 'pending';
+        const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
+        const acc = d.accounts?.[0];
+        const neverWorked = !acc?.last_transaction_date;
+        return neverWorked && ws === 'working' && !isFired;
       }).length;
 
       document.getElementById('stat-total').textContent = rawData.total || allDrivers.length;
