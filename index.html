@@ -293,14 +293,14 @@ body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--t
             <div class="stat-sub">Enregistrés dans la flotte</div>
           </div>
           <div class="stat-card">
-            <div class="stat-top"><span class="stat-label">Actifs aujourd'hui</span><span class="stat-icon">🟢</span></div>
+            <div class="stat-top"><span class="stat-label">Actifs (14 jours)</span><span class="stat-icon">🟢</span></div>
             <div class="stat-val" id="stat-active" style="color:var(--green)">—</div>
-            <div class="stat-sub">En ligne maintenant</div>
+            <div class="stat-sub">Course récente (≤14j)</div>
           </div>
           <div class="stat-card">
             <div class="stat-top"><span class="stat-label">Nouveaux</span><span class="stat-icon">🆕</span></div>
             <div class="stat-val" id="stat-new" style="color:var(--blue)">—</div>
-            <div class="stat-sub" id="stat-new-sub">En attente d'activation</div>
+            <div class="stat-sub" id="stat-new-sub">0 course — jamais roulé</div>
           </div>
           <div class="stat-card highlight">
             <div class="stat-top"><span class="stat-label">Solde compte</span><span class="stat-icon">💳</span></div>
@@ -623,35 +623,22 @@ function renderDriversTable(drivers) {
   if (currentFilter !== 'all') {
     filtered = drivers.filter(d => {
       const ws = (d.driver_profile?.work_status || '').toLowerCase();
-      const cs = (d.current_status?.status || '').toLowerCase();
-      const license = d.driver_profile?.driver_license?.normalized_number || '';
-      const thirtyDays = new Date(Date.now() - 30*24*60*60*1000);
-      const accA = d.accounts?.[0];
-      const lastTxA = accA?.last_transaction_date ? new Date(accA.last_transaction_date) : null;
-      const isFired2 = !!d.driver_profile?.fire_date || ws === 'fired';
+      const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
       const dId = d.driver_profile?.id;
+      
       if (currentFilter === 'active') {
         if (window.actifsIds) return window.actifsIds.has(dId);
-        return lastTxA && lastTxA > thirtyDays && ws === 'working' && !isFired2;
+        return (d._courses_14j > 0) && ws === 'working' && !isFired;
       }
-      const accF = d.accounts?.[0];
-      const neverWorkedF = !accF?.last_transaction_date;
-      const isFiredD = !!d.driver_profile?.fire_date || ws === 'fired';
-      const dIdN = d.driver_profile?.id;
       if (currentFilter === 'new') {
-        if (window.nouveauxIds) return window.nouveauxIds.has(dIdN);
-        return neverWorkedF && ws === 'working' && !isFiredD;
+        if (window.nouveauxIds) return window.nouveauxIds.has(dId);
+        return (d._courses_total === 0) && ws === 'working' && !isFired;
       }
-      const accR = d.accounts?.[0];
-      const lastTxR = accR?.last_transaction_date ? new Date(accR.last_transaction_date) : null;
-      const thirtyDaysR = new Date(Date.now() - 30*24*60*60*1000);
-      const isFiredR = !!d.driver_profile?.fire_date || ws === 'fired';
-      const dIdR = d.driver_profile?.id;
       if (currentFilter === 'roulement') {
-        if (window.roulementIds) return window.roulementIds.has(dIdR);
-        return lastTxR && lastTxR <= thirtyDaysR && ws === 'working' && !isFiredR;
+        if (window.roulementIds) return window.roulementIds.has(dId);
+        return (d._courses_total > 0) && (d._courses_14j === 0) && ws === 'working' && !isFired;
       }
-      if (currentFilter === 'blocked') return ws === 'fired' || !!d.driver_profile?.fire_date;
+      if (currentFilter === 'blocked') return isFired;
       return true;
     });
   }
@@ -666,7 +653,7 @@ function renderDriversTable(drivers) {
     const avail = mapAvailability(currentStatus);
     const car = d.car ? `${d.car.brand} ${d.car.model} · ${d.car.normalized_number}` : '—';
     const rating = profile.rating?.toFixed(1) || '—';
-    const trips = profile.completed_orders_count ?? profile.trips ?? '—';
+    const trips = d._courses_total ?? profile.completed_orders_count ?? '—';
     const av = getAvColor(name);
     const initials = getInitials(name);
 
@@ -695,7 +682,7 @@ function renderDriversTable(drivers) {
     const st = mapStatus(workStatus, currentStatus);
     const av = getAvColor(name);
     const initials = getInitials(name);
-    const trips = profile.completed_orders_count ?? profile.trips ?? '—';
+    const trips = d._courses_total ?? profile.completed_orders_count ?? '—';
     return `<div class="driver-row-item">
       <div class="driver-cell driver-name-cell">
         <div class="driver-av" style="background:${av.bg};color:${av.txt};">${initials}</div>
@@ -716,15 +703,13 @@ function renderDriversTable(drivers) {
 }
 
 function renderNewDriversForActivation(drivers) {
-  // Nouveaux: use IDs from n8n segments if available, else local logic
+  // Nouveaux = 0 course totale, basé sur les IDs de n8n v5 ou fallback _courses_total
   const newDrivers = drivers.filter(d => {
     const dId = d.driver_profile?.id;
     if (window.nouveauxIds) return window.nouveauxIds.has(dId);
     const ws = (d.driver_profile?.work_status || '').toLowerCase();
     const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
-    const acc = d.accounts?.[0];
-    const neverWorked = !acc?.last_transaction_date;
-    return neverWorked && ws === 'working' && !isFired;
+    return (d._courses_total === 0) && ws === 'working' && !isFired;
   });
 
   document.getElementById('nav-badge-new').textContent = newDrivers.length;
@@ -954,35 +939,50 @@ async function loadData() {
       const data = driversData.value;
       const rawData = data.raw || data;
       allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
-      // Use pre-calculated segments from n8n if available
-      const segments = data.segments || null;
       
-      // "Actifs" = a travaillé dans les 30 derniers jours (last_transaction_date récente)
-      // Portail: Actifs=27, Roulement=66, Nouveaux=3
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const activeCount = allDrivers.filter(d => {
-        const ws = (d.driver_profile?.work_status || '').toLowerCase();
-        const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
-        const acc = d.accounts?.[0];
-        const lastTx = acc?.last_transaction_date ? new Date(acc.last_transaction_date) : null;
-        const recentlyWorked = lastTx && lastTx > thirtyDaysAgo;
-        return recentlyWorked && ws === 'working' && !isFired;
-      }).length;
-      // "Nouveau" = jamais fait de course (no last_transaction_date) + working + not fired
-      // C'est la vraie logique Yango : Kane, Gomis, Koné n'ont aucune transaction
-      const newCount = allDrivers.filter(d => {
-        const ws = (d.driver_profile?.work_status || '').toLowerCase();
-        const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
-        const acc = d.accounts?.[0];
-        const neverWorked = !acc?.last_transaction_date;
-        return neverWorked && ws === 'working' && !isFired;
-      }).length;
+      // Utiliser les segments pre-calcules par n8n v5 (basés sur les vraies courses)
+      const segments = data.segments || rawData.segments || null;
+      
+      // Stocker les IDs de segments pour le filtrage
+      if (data.nouveaux_ids || rawData.nouveaux_ids) {
+        window.nouveauxIds = new Set(data.nouveaux_ids || rawData.nouveaux_ids || []);
+        window.actifsIds = new Set(data.actifs_ids || rawData.actifs_ids || []);
+        window.roulementIds = new Set(data.roulement_ids || rawData.roulement_ids || []);
+        window.bloquesIds = new Set(data.bloques_ids || rawData.bloques_ids || []);
+      }
+
+      let activeCount, newCount, roulementCount;
+      
+      if (segments) {
+        // n8n v5 calcule les segments via /orders/list (vraies courses)
+        activeCount = segments.actifs || 0;
+        newCount = segments.nouveaux || 0;
+        roulementCount = segments.roulement || 0;
+      } else {
+        // Fallback si n8n ne renvoie pas les segments
+        activeCount = allDrivers.filter(d => {
+          const ws = (d.driver_profile?.work_status || '').toLowerCase();
+          const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
+          return (d._courses_14j > 0) && ws === 'working' && !isFired;
+        }).length;
+        newCount = allDrivers.filter(d => {
+          const ws = (d.driver_profile?.work_status || '').toLowerCase();
+          const isFired = !!d.driver_profile?.fire_date || ws === 'fired';
+          return (d._courses_total === 0) && ws === 'working' && !isFired;
+        }).length;
+      }
 
       document.getElementById('stat-total').textContent = rawData.total || allDrivers.length;
       document.getElementById('stat-active').textContent = activeCount;
       document.getElementById('stat-new').textContent = newCount;
       document.getElementById('nav-badge-drivers').textContent = rawData.total || allDrivers.length;
       document.getElementById('nav-badge-new').textContent = newCount;
+
+      // Utiliser le solde cumulé de n8n si disponible
+      const soldeCumule = data.solde_cumule || rawData.solde_cumule;
+      if (soldeCumule !== undefined && soldeCumule !== null) {
+        renderSolde(soldeCumule);
+      }
 
       renderDriversTable(allDrivers);
       renderNewDriversForActivation(allDrivers);
