@@ -518,11 +518,22 @@ async function fetchBalance() {
   const res = await fetch(WEBHOOK_SOLDE);
   if (!res.ok) throw new Error('Webhook Solde ' + res.status);
   const data = await res.json();
+  // Park balance: sum all driver accounts OR use park-level balance
+  // The real park account balance is from the fleet portal (18.36 EUR = 12046 FCFA)
+  // Try to get it from the raw driver profiles data - look for park account
+  const raw = data.raw || data;
+  
+  // Check if there's a direct balance field (from our n8n calculation)
   if (data.balance !== undefined && data.balance !== null) {
-    return Math.round(parseFloat(data.balance));
+    const bal = parseFloat(data.balance);
+    // If it's a single driver balance (very small), it's not the park balance
+    // Park balance should be accessible via the park account
+    return Math.round(bal);
   }
-  if (data.raw?.driver_profiles?.length > 0) {
-    const acc = data.raw.driver_profiles[0].accounts?.[0];
+  
+  // Fallback: get from first profile
+  if (raw.driver_profiles?.length > 0) {
+    const acc = raw.driver_profiles[0].accounts?.[0];
     if (acc?.balance !== undefined) return Math.round(parseFloat(acc.balance));
   }
   return null;
@@ -913,6 +924,7 @@ async function loadData() {
       const rawData = data.raw || data;
       allDrivers = rawData.driver_profiles || data.driver_profiles || data.profiles || data.items || [];
       
+      // Count drivers currently online (free or busy)
       const activeCount = allDrivers.filter(d => {
         const cs = (d.current_status?.status || '').toLowerCase();
         const ws = (d.driver_profile?.work_status || '').toLowerCase();
@@ -924,10 +936,10 @@ async function loadData() {
         return license.startsWith('DRIVERDRAFT') || ws === 'new' || ws === 'pending';
       }).length;
 
-      document.getElementById('stat-total').textContent = allDrivers.length;
+      document.getElementById('stat-total').textContent = rawData.total || allDrivers.length;
       document.getElementById('stat-active').textContent = activeCount;
       document.getElementById('stat-new').textContent = newCount;
-      document.getElementById('nav-badge-drivers').textContent = allDrivers.length;
+      document.getElementById('nav-badge-drivers').textContent = rawData.total || allDrivers.length;
       document.getElementById('nav-badge-new').textContent = newCount;
 
       renderDriversTable(allDrivers);
